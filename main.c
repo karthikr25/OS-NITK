@@ -5,12 +5,30 @@ int numLines = 25;
 
 int curLocation = 0;
 
+int firstInput = 1;
+int shiftKey = 0;
+
 /*
 Black  0	Red			4	 Dark grey		8	  Light red	     12
 Blue   1	Magenta		5	 Light blue		9	  Light magenta	 13
 Green  2	Brown		6	 Light green	10	  Light brown	 14
 Cyan   3	Light grey	7	 Light cyan		11	  White	         15
 */
+
+int scanCodeToASCII_woShift_arr[] = {-1, -1, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', -1, -1, 'q', 'w', 'e', 'r', 't', 'y',
+									'u', 'i', 'o', 'p', '[', ']', -2, -1, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', -3, '\\',
+									'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', -3, -1, -1, ' ', -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
+									-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+    								};
+int scanCodeToASCII_wShift_arr[] = {-1, -1, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', -1, -1, 'Q', 'W', 'E', 'R', 'T', 'Y',
+									'U', 'I', 'O', 'P', '{', '}', -2, -1, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', -3, '|',
+									'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', -3, -1, -1, ' ', -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
+									-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+    								};
+
+extern void outb(unsigned short port, unsigned char data);
+extern unsigned char inb(unsigned short port);
+
 void writeCharToFB_Loc(char ch, unsigned char foreground, unsigned char background, int location);
 void writeCharToFB(char ch, unsigned char foreground, unsigned char background);
 void writeStringToFB(char* str, unsigned char foreground, unsigned char background);
@@ -18,9 +36,6 @@ void writeStringToFB(char* str, unsigned char foreground, unsigned char backgrou
 void endOfBufferBehaviour();
 void movetoNextLine();
 void clearScreen();
-
-extern void outb(unsigned short port, unsigned char data);
-extern unsigned char inb(unsigned short port);
 
 void enableCursor();
 void disableCursor();
@@ -30,9 +45,8 @@ void swap(char* a, char* b);
 void reverse(char* str, int length);
 char* itoa(int num, char* str, int base);
 
-void serial_configure_baud_rate(unsigned short com, unsigned short divisor);
-void serial_configure_line(unsigned short com);
-int serial_is_transmit_fifo_empty(unsigned int com);
+char scanCodeToASCII_woShift(int input);
+int takeInput(char* str, int maxLen);
 
 //MAIN FUNCTION
 void mainFunc()
@@ -41,22 +55,45 @@ void mainFunc()
 	enableCursor();
 	moveCursor(0);
 
-	writeStringToFB("Testing", 7, 0);
+	writeStringToFB("Testing\n", 7, 0);
+
+	char str[100];
+	takeInput(str, 100);
+	writeStringToFB(str, 0, 7);
+
+	writeStringToFB("\nDone\n", 7, 0);
+
+	takeInput(str, 100);
+	writeStringToFB(str, 0, 7);
+
+	writeStringToFB("\nDone\n", 7, 0);
+
+	takeInput(str, 100);
+	writeStringToFB(str, 0, 7);
+
+	writeStringToFB("\nDone\n", 7, 0);
 }
 
 void writeCharToFB_Loc(char ch, unsigned char foreground, unsigned char background, int location)
 {
 	frameBuffer[2*location] = ch;
-    frameBuffer[2*location+1] = ((background & 0xF) << 4) | (foreground & 0xF);
+	frameBuffer[2*location+1] = ((background & 0xF) << 4) | (foreground & 0xF);
 }
 
 void writeCharToFB(char ch, unsigned char foreground, unsigned char background)
 {
-	frameBuffer[2*curLocation] = ch;
-    frameBuffer[2*curLocation+1] = ((background & 0xF) << 4) | (foreground & 0xF);
-    curLocation++;
+	if (ch == '\n')
+	{
+		movetoNextLine();
+		endOfBufferBehaviour();
+		return;
+	}
 
-    endOfBufferBehaviour();
+	frameBuffer[2*curLocation] = ch;
+	frameBuffer[2*curLocation+1] = ((background & 0xF) << 4) | (foreground & 0xF);
+	curLocation++;
+
+	endOfBufferBehaviour();
 }
 
 void writeStringToFB(char* str, unsigned char foreground, unsigned char background)
@@ -80,20 +117,20 @@ void writeStringToFB(char* str, unsigned char foreground, unsigned char backgrou
 void endOfBufferBehaviour()
 {
 	if (curLocation >= numLocations)
-    {
-    	for (int a = 0; a < (numLocations-lineLength); a++)
-    	{
-    		frameBuffer[2*a] = frameBuffer[2*(a+lineLength)];
-    		frameBuffer[2*a+1] = frameBuffer[2*(a+lineLength)+1];
-    	}
+	{
+		for (int a = 0; a < (numLocations-lineLength); a++)
+		{
+			frameBuffer[2*a] = frameBuffer[2*(a+lineLength)];
+			frameBuffer[2*a+1] = frameBuffer[2*(a+lineLength)+1];
+		}
 
-    	for (int a = (numLocations-lineLength); a < numLocations; a++)
-    	{
-    		writeCharToFB_Loc(' ', 0, 0, a);
-    	}
+		for (int a = (numLocations-lineLength); a < numLocations; a++)
+		{
+			writeCharToFB_Loc(' ', 0, 0, a);
+		}
 
-    	curLocation = (numLocations-lineLength);
-    }
+		curLocation = (numLocations-lineLength);
+	}
 }
 
 void movetoNextLine()
@@ -106,9 +143,9 @@ void movetoNextLine()
 void clearScreen()
 {
 	for (int a = 0; a < numLocations; a++)
-    {
-    	writeCharToFB_Loc(' ', 7, 0, a);
-    }
+	{
+		writeCharToFB_Loc(' ', 7, 0, a);
+	}
 }
 
 void enableCursor()
@@ -144,81 +181,154 @@ void swap(char* a, char* b)
 
 void reverse(char* str, int length) 
 { 
-    int start = 0; 
-    int end = length -1; 
-    while (start < end) 
-    { 
-        swap((str+start), (str+end)); 
-        start++; 
-        end--; 
-    } 
+	int start = 0; 
+	int end = length -1; 
+	while (start < end) 
+	{ 
+		swap((str+start), (str+end)); 
+		start++; 
+		end--; 
+	} 
 } 
 
 char* itoa(int num, char* str, int base) 
 { 
-    int i = 0; 
-    int isNegative = 0; 
+	int i = 0; 
+	int isNegative = 0; 
   
-    if (num == 0) 
-    { 
-        str[i++] = '0'; 
-        str[i] = '\0'; 
-        return str; 
-    } 
+	if (num == 0) 
+	{ 
+		str[i++] = '0'; 
+		str[i] = '\0'; 
+		return str; 
+	} 
   
-    if (num < 0 && base == 10) 
-    { 
-        isNegative = 1; 
-        num *= -1; 
-    } 
+	if (num < 0 && base == 10) 
+	{ 
+		isNegative = 1; 
+		num *= -1; 
+	} 
   
-    while (num != 0) 
-    { 
-        int rem = num % base; 
-        str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0'; 
-        num /= base; 
-    } 
+	while (num != 0) 
+	{ 
+		int rem = num % base; 
+		str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0'; 
+		num /= base; 
+	} 
 
-    if (isNegative)
-    {
-        str[i++] = '-'; 
-    }
+	if (isNegative)
+	{
+		str[i++] = '-'; 
+	}
   
-    str[i] = '\0';
-    reverse(str, i); 
+	str[i] = '\0';
+	reverse(str, i); 
   
-    return str; 
-} 
-
-# define SERIAL_COM1_BASE  0x3F8      //COM1 base port 
-/*SERIAL_DATA_PORT(base)          (base)
-  SERIAL_FIFO_COMMAND_PORT(base)  (base + 2)
-  SERIAL_LINE_COMMAND_PORT(base)  (base + 3)
-  SERIAL_MODEM_COMMAND_PORT(base) (base + 4)
-  SERIAL_LINE_STATUS_PORT(base)   (base + 5)
-*/
-void serial_configure_baud_rate(unsigned short com, unsigned short divisor)
-{
-    outb(com+3,0x80);   //Tells the serial port to expect first the highest 8 bits on the data port, then the lowest 8 bits will follow
-    outb(com,(divisor >> 8) & 0x00FF);
-    outb(com,divisor & 0x00FF);
+	return str; 
 }
 
-void serial_configure_line(unsigned short com)
+int scanCodeToASCII(int input)
 {
-	/* Bit:     | 7 | 6 | 5 4 3 | 2 | 1 0 |       d	Enables (d = 1) or disables (d = 0) DLAB , b	If break control enabled (b = 1) disabled (b = 0)
-                                                  prty	The number of parity bits to use, s	The number of stop bits to use (s = 0 equals 1, s = 1 equals 1.5 or 2)
-                                                  dl	Describes the length of the data
-     * Content: | d | b | prty  | s | dl  |
-     * Value:   | 0 | 0 | 0 0 0 | 0 | 1 1 | = 0x03
-    */
-	outb(com+3, 0x03);
-	outb(com+3, 0xC7);
-	outb(com+4, 0x03);  
+	if (input >= 83)
+	{
+		return -1;
+	}
+
+	if (shiftKey)
+	{
+		return scanCodeToASCII_wShift_arr[input];
+	}
+	else
+	{
+		return scanCodeToASCII_woShift_arr[input];
+	}
 }
 
-int serial_is_transmit_fifo_empty(unsigned int com)
+int takeInput(char* str, int maxLen)
 {
-    /* 0x20 = 0010 0000 5th bit is 1 so the buffer is empty*/
-    return inb(com+5) & 0x20;
+	int count = 0;
+	unsigned char input = 0;
+
+	int firstEnter = 1;
+	int firstPos = curLocation;
+	
+	while (count < (maxLen-1))
+	{
+		if (inb(0x60) != input)
+		{
+			input = inb(0x60);
+
+			if (input == 28)
+			{
+				if (firstInput)
+				{
+					break;
+				}
+				else
+				{
+					if (firstEnter)
+					{
+						firstEnter = 0;
+						continue;
+					}
+					else
+					{
+						break;
+					}
+				}
+			}
+
+			if (input == 14)
+			{
+				if (curLocation == firstPos)
+				{
+					continue;
+				}
+				else
+				{
+					curLocation--;
+					if (curLocation < 0)
+					{
+						curLocation = 0;
+					}
+					writeCharToFB_Loc(' ', 7, 0, curLocation);
+					moveCursor(curLocation);
+					count--;
+					continue;
+				}
+			}
+
+			if ((int) input == 0x2A || (int) input == 0x36)
+			{
+				shiftKey = 1;
+				continue;
+			}
+
+			if ((int) input == 0xAA || (int) input == 0xB6)
+			{
+				shiftKey = 0;
+				continue;
+			}
+
+			if (input > 0)
+			{
+				if (scanCodeToASCII((int) input) >= 0)
+				{
+					str[count++] = scanCodeToASCII((int) input);
+					writeCharToFB(scanCodeToASCII((int) input), 7, 0);
+					moveCursor(curLocation);
+				}
+			}
+		}
+	}
+	str[count] = '\0';
+	writeCharToFB('\n', 7, 0);
+	moveCursor(curLocation);
+
+	if (firstInput)
+	{
+		firstInput = 0;
+	}
+
+	return count;
 }
